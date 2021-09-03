@@ -1,0 +1,352 @@
+---
+title: "Phishing Study ICITDA 2021"
+author: "Ahmad R Pratama"
+date: "7/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Libraries
+```{r, warning=FALSE, message=FALSE}
+library(psych)
+library(tidyverse)
+library(printr)
+library(ggpubr)
+library(car)
+library(summarytools)
+library(emmeans)
+library(rstatix)
+library(ggiraphExtra)
+```
+
+# Attach dataset
+```{r, warning=FALSE, message=FALSE}
+data <- read_csv("phishingdataset247.csv")
+data <- data[, c('id', 'gender', 'age','agegroup', 'group', 'score', 'literacy','agelit')]
+head(data)
+summary(data)
+```
+## Descriptive statistics
+```{r}
+freq(data, report.nas = F)
+descr(data$score)
+hist(data$score)
+descr(data$age)
+hist(data$age)
+descr(data$literacy)
+hist(data$literacy)
+descr(data$agelit)
+hist(data$agelit)
+tapply(data$score, data$gender, summary)
+tapply(data$score, data$agegroup, summary)
+tapply(data$score, data$group, summary)
+```
+# Checking Assumptions
+## Linearity
+```{r}
+ggscatter(
+  data, x = "literacy", y = "score",
+  facet.by  = c("gender", "group"), 
+  short.panel.labs = FALSE
+  )+
+  stat_smooth(method = "loess", span = 0.9)
+
+ggscatter(
+  data, x = "age", y = "score",
+  facet.by  = c("gender", "group"), 
+  short.panel.labs = FALSE
+  )+
+  stat_smooth(method = "loess", span = 0.9)
+
+ggscatter(
+  data, x = "agelit", y = "score",
+  facet.by  = c("gender", "group"), 
+  short.panel.labs = FALSE
+  )+
+  stat_smooth(method = "loess", span = 0.9)
+```
+## Homogeneity of regression slopes
+```{r}
+res.aov <- data %>%
+  anova_test(
+    score ~ age + gender + group + 
+     group*gender + age*group +
+     age*gender + age*gender*group
+  )
+get_anova_table(res.aov)
+
+res.aov <- data %>%
+  anova_test(
+    score ~ literacy + gender + group + 
+     group*gender + literacy*group +
+     literacy*gender + literacy*gender*group
+  )
+get_anova_table(res.aov)
+
+res.aov <- data %>%
+  anova_test(
+    score ~ agelit + gender + group + 
+     group*gender + agelit*group +
+     agelit*gender + agelit*gender*group
+  )
+get_anova_table(res.aov)
+```
+## Compute mean and SD
+```{r}
+data %>%
+  group_by(gender, group) %>%
+  get_summary_stats(score, type = "mean_sd")
+
+data %>%
+  group_by(gender) %>%
+  get_summary_stats(score, type = "mean_sd")
+
+data %>%
+  group_by(group) %>%
+  get_summary_stats(score, type = "mean_sd")
+
+data %>%
+  group_by(agegroup) %>%
+  get_summary_stats(score, type = "mean_sd")
+
+data %>%
+  get_summary_stats(score, type = "mean_sd")
+```
+## Normality assumption
+```{r}
+model1  <- lm(score ~ literacy+gender*group, data = data)
+# Create a QQ plot of residuals
+ggqqplot(residuals(model1))
+# Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model1))
+
+model2  <- lm(score ~ age+gender*group, data = data)
+# Create a QQ plot of residuals
+ggqqplot(residuals(model2))
+# Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model2))
+
+model3  <- lm(score ~ agelit+gender*group, data = data)
+# Create a QQ plot of residuals
+ggqqplot(residuals(model3))
+# Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model3))
+```
+## Homogneity of variance assumption
+```{r}
+data %>% levene_test(score ~ gender*group)
+```
+# ANCOVA Computation
+```{r}
+mod <- lm(score ~ group*gender, data=data)
+Anova(mod)
+```
+```{r}
+res.aov <- data %>% 
+  anova_test(score ~ group*gender)
+get_anova_table(res.aov)
+```
+```{r}
+res1<-Anova(lm(score ~ group*gender, data=data))
+anova_summary(res1, detailed = T)
+```
+```{r}
+mod <- lm(score ~ age+group*gender, data=data)
+Anova(mod)
+```
+
+```{r}
+res.aov3 <- data %>% 
+  anova_test(score ~ agegroup*group*gender, effect.size = "both")
+get_anova_table(res.aov3)
+```
+```{r}
+res2<-Anova(lm(score ~ age+group*gender, data=data, type=2))
+anova_summary(res2, detailed = T)
+```
+```{r}
+res2<-Anova(lm(score ~ agegroup*group*gender, data=data, type=2))
+anova_summary(res2, detailed = T)
+```
+```{r}
+res.aov2 <- data %>% 
+  anova_test(score ~ literacy+group*gender)
+get_anova_table(res.aov2)
+
+res.aov4 <- data %>% 
+  anova_test(score ~ agelit+group*gender)
+get_anova_table(res.aov4)
+```
+## Output Table
+```{r}
+#anova(lm(score ~ agelit+group*gender, data=data))
+library(apaTables)
+lm_output<-(lm(score ~ group*gender, data=data, type=2))
+apa.aov.table(lm_output, filename = "Table1_APA.doc", table.number = 1)
+
+lm_output<-(lm(score ~ age+group*gender, data=data, type=2))
+apa.aov.table(lm_output, filename = "Table1_APA.doc", table.number = 1)
+```
+
+## Multiple pairwise comparisons
+```{r}
+pwc <- data %>%
+  group_by(gender) %>%
+  emmeans_test(score ~ group, p.adjust.method = "bonferroni") %>%
+  select(-df, -statistic, -p)
+pwc
+get_emmeans(pwc)
+```
+# Visualization
+## Boxplots
+```{r}
+
+bxp <- ggboxplot(
+  data, x = "group", y = "score", 
+  color = "gender", palette = "lancet", 
+  xlab = "Intervention", ylab = "Phishing Awareness Score"
+  )
+bxp
+
+pwc <- pwc %>% add_xy_position(x = "group")
+bxp +
+  stat_pvalue_manual(
+    pwc, color = "gender", hide.ns = TRUE,
+    tip.length = 0, step.increase = 0.1, 
+  ) +
+  labs(
+    subtitle = get_test_label(res.aov, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+    )
+
+pwc <- pwc %>% add_xy_position(x = "group")
+bxp +
+  stat_pvalue_manual(
+    pwc, color = "gender", hide.ns = TRUE,
+    tip.length = 0, step.increase = 0.1, 
+  ) +
+  labs(
+    subtitle = get_test_label(res.aov2, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+    )
+
+pwc <- pwc %>% add_xy_position(x = "group")
+bxp +
+  stat_pvalue_manual(
+    pwc, color = "gender", hide.ns = TRUE,
+    tip.length = 0, step.increase = 0.1, 
+  ) +
+  labs(
+    subtitle = get_test_label(res.aov3, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+    )
+
+pwc <- pwc %>% add_xy_position(x = "group")
+bxp +
+  stat_pvalue_manual(
+    pwc, color = "gender", hide.ns = TRUE,
+    tip.length = 0, step.increase = 0.1, 
+  ) +
+  labs(
+    subtitle = get_test_label(res.aov4, detailed = TRUE),
+    caption = get_pwc_label(pwc)
+    )
+
+```
+
+## Scatterplots
+```{r}
+fit1 = lm(score~age+group*gender, data=data)
+summary(fit1)
+ggPredict(fit1,se=F,interactive=F)
+```
+
+
+```{r}
+fit2 = lm(score~literacy+group*gender, data=data)
+summary(fit2)
+ggPredict(fit2,se=F,interactive=F)
+
+fit3 = lm(score~agelit+group*gender, data=data)
+summary(fit3)
+ggPredict(fit3,se=F,interactive=F)
+```
+# Three-Way ANOVA
+```{r}
+data %>%
+  group_by(agegroup, gender, group) %>%
+  get_summary_stats(score, type = "mean_sd")
+```
+## Boxplot
+```{r}
+bxp3 <- ggboxplot(
+  data, x = "group", y = "score", 
+  color = "agegroup", palette = "lancet", facet.by = "gender", 
+  ylab = "Phishing Awareness Score", xlab = "Intervention"
+  )
+bxp3
+```
+## Outliers
+```{r}
+data %>%
+  group_by(agegroup, gender, group) %>%
+  identify_outliers(score)
+```
+## Normality assumption
+```{r}
+model  <- lm(score ~ agegroup*gender*group, data = data)
+# Create a QQ plot of residuals
+ggqqplot(residuals(model))
+# Compute Shapiro-Wilk test of normality
+shapiro_test(residuals(model))
+```
+## Homogneity of variance assumption
+```{r}
+data %>% levene_test(score ~ agegroup*gender*group)
+```
+## Computation
+```{r}
+res.aov <- data %>% anova_test(score ~ agegroup*gender*group)
+res.aov
+mod <- lm(score ~ agegroup*group*gender, data=data)
+Anova(mod, type=2)
+```
+## Post-hoc Test
+```{r}
+model  <- lm(score ~ agegroup*gender*group, data = data)
+data %>%
+  group_by(gender) %>%
+  anova_test(score ~ agegroup*group, error = model)
+```
+## Pairwise Comparison
+```{r}
+# Pairwise comparisons
+library(emmeans)
+pwc3 <- data %>%
+  group_by(agegroup, gender) %>%
+  emmeans_test(score ~ group, p.adjust.method = "bonferroni") %>%
+  select(-df, -statistic, -p) # Remove details
+# Show comparison results for male at high risk
+pwc3
+pwc3 %>% filter(agegroup == "1.teens", gender == "male")
+```
+
+## Visualization
+```{r}
+# Visualization: box plots with p-values
+pwc3 <- pwc3 %>% add_xy_position(x = "group")
+pwc.filtered <- pwc3 %>% filter(agegroup == "1.teens", gender == "male")
+bxp3 +
+  stat_pvalue_manual(
+    pwc.filtered, color = "agegroup", linetype = "agegroup", hide.ns = TRUE,
+    tip.length = 0, step.increase = 0.1, step.group.by = "gender"
+  ) +
+  labs(
+    subtitle = get_test_label(res.aov, detailed = TRUE),
+    caption = get_pwc_label(pwc), ylab="Phishing Awareness Score"
+    )
+```
+
